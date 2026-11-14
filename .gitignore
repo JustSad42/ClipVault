@@ -1,0 +1,8 @@
+bin/
+obj/
+publish/
+publish-next/
+out/
+.vs/
+*.user
+graphify-out/

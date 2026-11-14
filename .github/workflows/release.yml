@@ -1,0 +1,37 @@
+# Builds ClipVault.exe and publishes a GitHub release whenever a version tag (v1.2.3) is pushed.
+# Installed copies of ClipVault find the new release and update themselves.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Build
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart("v")
+          dotnet publish ClipVault.csproj -c Release -r win-x64 --self-contained false `
+            -p:PublishSingleFile=true -p:Version=$version -o out
+          $hash = (Get-FileHash out/ClipVault.exe -Algorithm SHA256).Hash.ToLower()
+          Set-Content out/ClipVault.exe.sha256 "$hash  ClipVault.exe" -NoNewline
+
+      - name: Publish release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" out/ClipVault.exe out/ClipVault.exe.sha256 `
+            --title "ClipVault ${{ github.ref_name }}" --notes-from-tag
