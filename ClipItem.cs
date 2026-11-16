@@ -52,6 +52,11 @@ public class ClipItem : INotifyPropertyChanged
             OnChanged(nameof(LeadImage));
             OnChanged(nameof(LeadPhoto));
             OnChanged(nameof(PreviewLine));
+            OnChanged(nameof(Tags));
+            OnChanged(nameof(TypeLabel));
+            OnChanged(nameof(UseMono));
+            OnChanged(nameof(TypeBrush));
+            OnChanged(nameof(TypeSoft));
             OnChanged(nameof(Preview));
             OnChanged(nameof(Meta));
             OnChanged(nameof(TipText));
@@ -77,7 +82,7 @@ public class ClipItem : INotifyPropertyChanged
     public string? QrText
     {
         get => _qrText;
-        set { _qrText = value; _tokens = null; OnChanged(); OnChanged(nameof(HasQr)); OnChanged(nameof(QrIsLink)); OnChanged(nameof(Meta)); }
+        set { _qrText = value; _tokens = null; OnChanged(); OnChanged(nameof(HasQr)); OnChanged(nameof(QrIsLink)); OnChanged(nameof(Meta)); OnChanged(nameof(Tags)); }
     }
 
     /// <summary>True when tracking parameters were removed from this link as it was copied.</summary>
@@ -377,7 +382,72 @@ public class ClipItem : INotifyPropertyChanged
         catch { return null; }
     }
 
-    public void RefreshMeta() { OnChanged(nameof(Meta)); OnChanged(nameof(Group)); OnChanged(nameof(AgoText)); }
+    public void RefreshMeta()
+    {
+        foreach (var p in new[] { nameof(Meta), nameof(Group), nameof(AgoText), nameof(Tags), nameof(TypeBrush), nameof(TypeSoft) })
+            OnChanged(p);
+    }
+
+    // ---------- row header: source, type tag, info tags ----------
+
+    /// <summary>App name in capitals for the row header, e.g. "GOOGLE CHROME".</summary>
+    [JsonIgnore] public string? SourceLabel => string.IsNullOrWhiteSpace(SourceName) ? null : SourceName.ToUpperInvariant();
+
+    [JsonIgnore]
+    public string TypeLabel => Card switch
+    {
+        CardKind.Files => FilePaths.Length == 1 ? (Directory.Exists(FilePaths[0]) ? "Folder" : "File") : "Files",
+        CardKind.Plain => !IsCommand ? "Text" : PathStart.IsMatch(Preview) ? "Path" : "Command",
+        var k => k.ToString(),
+    };
+    bool IsCommand => Card == CardKind.Plain && LooksTechnical;
+    bool LooksTechnical => Technical.IsMatch(Preview.Length > 300 ? Preview[..300] : Preview);
+    static readonly string[] Terminals = ["terminal", "powershell", "command prompt", "conhost", "wezterm", "alacritty", "putty", "mobaxterm"];
+    // A path, but not a Command Prompt line like "C:\Users\me>dir"
+    static readonly Regex PathStart = new(@"^\s*([A-Za-z]:\\|\\\\|~?/[\w.-]+/)(?![^\r\n>]*>)");
+
+    /// <summary>Color for this kind of item (stripe and type tag); set by the theme.</summary>
+    [JsonIgnore] public Brush? TypeBrush => System.Windows.Application.Current.TryFindResource("Type" + TypeKey) as Brush;
+    [JsonIgnore] public Brush? TypeSoft => System.Windows.Application.Current.TryFindResource("Type" + TypeKey + "Soft") as Brush;
+    string TypeKey => Card switch { CardKind.Plain => IsCommand ? "Code" : "Text", CardKind.Phone => "Email", var k => k.ToString() };
+
+    /// <summary>Small info tags after the type: "67 lines", "1920×1080", "QR", "2.3 MB", "formatted"…</summary>
+    [JsonIgnore]
+    public List<string> Tags
+    {
+        get
+        {
+            var t = new List<string>();
+            switch (Kind)
+            {
+                case ClipKind.Image:
+                    t.Add($"{PixelWidth}×{PixelHeight}");
+                    if (HasQr) t.Add("QR");
+                    break;
+                case ClipKind.Files:
+                    if (FilePaths.Length > 1) t.Add($"{FilePaths.Length} items");
+                    if (FileStats is { Length: > 0 } fs) t.Add(fs.Split(" · ")[0]);
+                    break;
+                default:
+                    if (LineCount > 1) t.Add($"{LineCount:N0} lines");
+                    else if ((Text?.Length ?? 0) > 80) t.Add($"{Text!.Length:N0} chars");
+                    break;
+            }
+            if (HasFormatting) t.Add("formatted");
+            if (LinkCleaned) t.Add("cleaned");
+            return t;
+        }
+    }
+
+    static readonly Regex Technical = new(
+        @"^\s*([A-Za-z]:\\|\\\\|~?/[\w.-]+/|\$ |PS [A-Za-z]:\\|>\s|(git|cd|ls|dir|npm|npx|pnpm|yarn|dotnet|curl|wget|pip|python|py|node|docker|kubectl|ssh|scp|winget|choco|cargo|rustup|sudo|apt|nslookup|ping|ipconfig|tracert|traceroute|netstat|nmap|brew|pwsh|powershell|cmd|gh|Get-|Set-|New-|Remove-|Invoke-|Start-|Stop-)(\b|\s))",
+        RegexOptions.IgnoreCase);
+
+    /// <summary>Code font for code, colors, file paths, commands and anything copied from a terminal.</summary>
+    [JsonIgnore]
+    public bool UseMono => Card is CardKind.Code or CardKind.Color
+        || (Card == CardKind.Plain && (LooksTechnical
+            || (SourceName is { } src && Terminals.Any(t => src.Contains(t, StringComparison.OrdinalIgnoreCase)))));
 
     /// <summary>Short "5m ago" text for compact rows.</summary>
     [JsonIgnore] public string AgoText => Ago(CopiedAt);

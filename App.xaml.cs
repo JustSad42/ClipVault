@@ -26,6 +26,16 @@ public partial class App : Application
         ("Thumb", "#40FFFFFF", "#40000000"),
     ];
     static readonly (string Dark, string Light) GlassSurface = ("#A61C1D22", "#B8F5F5F7");
+    static readonly (string Name, string Dark, string Light)[] TypeColors =
+    [
+        ("Text", "#A99BFF", "#6B5BD6"),
+        ("Code", "#4FD1A5", "#0F8A66"),
+        ("Link", "#6CB4FF", "#1F6FD1"),
+        ("Color", "#F58BB8", "#C2386F"),
+        ("Email", "#F59F7A", "#C0532A"),
+        ("Image", "#F2B84B", "#A86A0A"),
+        ("Files", "#A8A9B3", "#6A6C77"),
+    ];
     static readonly (string Dark, string Light) DefaultAccent = ("#8AA2FF", "#3D5AFE");
 
     Mutex? _mutex;
@@ -180,6 +190,14 @@ public partial class App : Application
         // Dark text on light accents (Windows does the same), white text on dark ones.
         double luminance = (0.299 * accent.R + 0.587 * accent.G + 0.114 * accent.B) / 255;
         SetBrush("OnAccent", luminance > 0.6 ? Hex("#111114") : Colors.White);
+
+        // One color per kind of item, for the row stripe and type tag.
+        foreach (var (name, d, l) in TypeColors)
+        {
+            var c = Hex(dark ? d : l);
+            SetBrush("Type" + name, c);
+            SetBrush("Type" + name + "Soft", Color.FromArgb(dark ? (byte)0x30 : (byte)0x24, c.R, c.G, c.B));
+        }
 
         foreach (Window w in Windows) Backdrop.Apply(w); // dark/light glass and title bars
     }

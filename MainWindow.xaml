@@ -81,6 +81,14 @@
             </Style.Triggers>
         </Style>
 
+        <!-- Info tag in a row header ("67 lines", "formatted") -->
+        <DataTemplate x:Key="InfoTag">
+            <Border CornerRadius="4" Padding="5,0,5,1" Margin="0,0,4,0" Background="{DynamicResource Panel}"
+                    BorderBrush="{DynamicResource Line}" BorderThickness="1" VerticalAlignment="Center">
+                <TextBlock Text="{Binding}" FontSize="10.5" Foreground="{DynamicResource Muted}"/>
+            </Border>
+        </DataTemplate>
+
         <!-- Quick-paste number badge, hidden past 9 -->
         <Style x:Key="Badge" TargetType="Border" BasedOn="{StaticResource KeyCap}">
             <Setter Property="Width" Value="18"/>
@@ -149,8 +157,8 @@
         <Style x:Key="RowStyle" TargetType="ListBoxItem">
             <Setter Property="Foreground" Value="{DynamicResource Fg}"/>
             <Setter Property="Focusable" Value="False"/>
-            <Setter Property="Margin" Value="0,0,4,1"/>
-            <Setter Property="Padding" Value="12,8,6,8"/>
+            <Setter Property="Margin" Value="0,0,4,0"/>
+            <Setter Property="Padding" Value="14,9,6,10"/>
             <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
             <Setter Property="ContextMenu" Value="{StaticResource ItemMenu}"/>
             <Setter Property="ToolTip" Value="{StaticResource ItemTip}"/>
@@ -164,12 +172,11 @@
                         <Grid Background="Transparent">
                             <Border x:Name="hover" CornerRadius="6" Background="{DynamicResource Hover}" Opacity="0"/>
                             <Border x:Name="sel" CornerRadius="6" Background="{DynamicResource Selected}" Opacity="0"/>
-                            <Border x:Name="pill" Width="3" Height="18" CornerRadius="1.5" Background="{DynamicResource Accent}"
-                                    HorizontalAlignment="Left" VerticalAlignment="Center" Opacity="0" RenderTransformOrigin="0.5,0.5">
-                                <Border.RenderTransform>
-                                    <ScaleTransform ScaleY="0.3"/>
-                                </Border.RenderTransform>
-                            </Border>
+                            <!-- Divider between entries -->
+                            <Border Height="1" VerticalAlignment="Bottom" Margin="14,0,6,0" Background="{DynamicResource Line}"/>
+                            <!-- Stripe in the item's type color; full strength when selected -->
+                            <Border x:Name="pill" Width="3" CornerRadius="1.5" Background="{Binding TypeBrush}"
+                                    HorizontalAlignment="Left" Margin="2,8,0,9" Opacity="0.55"/>
                             <ContentPresenter Margin="{TemplateBinding Padding}"/>
                         </Grid>
                         <ControlTemplate.Triggers>
@@ -194,13 +201,7 @@
                                     <BeginStoryboard>
                                         <Storyboard>
                                             <DoubleAnimation Storyboard.TargetName="sel" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.08"/>
-                                            <DoubleAnimation Storyboard.TargetName="pill" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.08"/>
-                                            <DoubleAnimation Storyboard.TargetName="pill" Duration="0:0:0.22"
-                                                             Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" To="1">
-                                                <DoubleAnimation.EasingFunction>
-                                                    <BackEase EasingMode="EaseOut" Amplitude="0.4"/>
-                                                </DoubleAnimation.EasingFunction>
-                                            </DoubleAnimation>
+                                            <DoubleAnimation Storyboard.TargetName="pill" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.12"/>
                                         </Storyboard>
                                     </BeginStoryboard>
                                 </Trigger.EnterActions>
@@ -208,9 +209,7 @@
                                     <BeginStoryboard>
                                         <Storyboard>
                                             <DoubleAnimation Storyboard.TargetName="sel" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.15"/>
-                                            <DoubleAnimation Storyboard.TargetName="pill" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.1"/>
-                                            <DoubleAnimation Storyboard.TargetName="pill" Duration="0:0:0.1"
-                                                             Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" To="0.3"/>
+                                            <DoubleAnimation Storyboard.TargetName="pill" Storyboard.TargetProperty="Opacity" To="0.55" Duration="0:0:0.15"/>
                                         </Storyboard>
                                     </BeginStoryboard>
                                 </Trigger.ExitActions>
@@ -226,8 +225,7 @@
 
         <!-- Compact list row: tighter padding -->
         <Style x:Key="CompactRowStyle" TargetType="ListBoxItem" BasedOn="{StaticResource RowStyle}">
-            <Setter Property="Padding" Value="12,5,6,5"/>
-            <Setter Property="Margin" Value="0,0,4,0"/>
+            <Setter Property="Padding" Value="14,5,6,6"/>
         </Style>
 
         <!-- Image grid tile: accent frame when selected -->
@@ -270,12 +268,16 @@
                     <ColumnDefinition/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition/>
+                </Grid.RowDefinitions>
 
-                <Border Style="{StaticResource Badge}" Margin="0,1,10,0" VerticalAlignment="Top">
+                <Border Style="{StaticResource Badge}" Margin="0,0,10,0" VerticalAlignment="Center">
                     <TextBlock Text="{Binding Badge}" Style="{StaticResource KeyCapText}"/>
                 </Border>
 
-                <Grid x:Name="Lead" Grid.Column="1" Width="32" Height="32" Margin="0,0,10,0" VerticalAlignment="Top" Visibility="Collapsed">
+                <Grid x:Name="Lead" Grid.Row="1" Grid.Column="1" Width="32" Height="32" Margin="0,0,10,0" VerticalAlignment="Top" Visibility="Collapsed">
                     <Border x:Name="LeadBox" CornerRadius="7" Background="{DynamicResource Panel}"
                             BorderBrush="{DynamicResource Line}" BorderThickness="1"/>
                     <TextBlock x:Name="LeadGlyph" FontFamily="{StaticResource Icons}" FontSize="14" Foreground="{DynamicResource Muted}"
@@ -290,26 +292,50 @@
                     </Border>
                 </Grid>
 
-                <StackPanel Grid.Column="2" VerticalAlignment="Center">
-                    <TextBlock x:Name="Title" Text="{Binding LinkHost}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
+                <!-- Header across the whole row: app, type tag, info tags, time -->
+                <Grid Grid.Column="1" Grid.ColumnSpan="3" Margin="0,0,6,5" VerticalAlignment="Center">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <Image Source="{Binding SourceIcon}" Width="12" Height="12" Margin="0,0,5,0" Opacity="0.85" VerticalAlignment="Center"
+                               Visibility="{Binding SourceIcon, Converter={StaticResource NullVis}}"/>
+                        <TextBlock Grid.Column="1" Text="{Binding SourceLabel}" FontSize="10.5" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource Muted}" MaxWidth="150" TextTrimming="CharacterEllipsis"
+                                   VerticalAlignment="Center" Margin="0,0,8,0"
+                                   Visibility="{Binding SourceLabel, Converter={StaticResource NullVis}}"/>
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" ClipToBounds="True" VerticalAlignment="Center">
+                            <Border CornerRadius="4" Padding="6,0,6,1" Margin="0,0,4,0" Background="{Binding TypeSoft}">
+                                <TextBlock Text="{Binding TypeLabel}" FontSize="10.5" FontWeight="SemiBold" Foreground="{Binding TypeBrush}"/>
+                            </Border>
+                            <ItemsControl ItemsSource="{Binding Tags}" ItemTemplate="{StaticResource InfoTag}" Focusable="False">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <StackPanel Orientation="Horizontal"/>
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                            </ItemsControl>
+                        </StackPanel>
+                        <TextBlock Grid.Column="3" Text="{Binding AgoText}" FontSize="11" Foreground="{DynamicResource Muted}"
+                                   VerticalAlignment="Center" Margin="8,0,0,0"/>
+                </Grid>
+
+                <StackPanel Grid.Row="1" Grid.Column="2" VerticalAlignment="Center">
+                    <TextBlock x:Name="Title" Text="{Binding LinkHost}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
                                Visibility="Collapsed"/>
-                    <TextBlock x:Name="Body" local:Highlighter.Text="{Binding Preview}" TextWrapping="NoWrap"
-                               TextTrimming="CharacterEllipsis"/>
+                    <TextBlock x:Name="Body" local:Highlighter.Text="{Binding Preview}" TextWrapping="NoWrap" FontSize="14"
+                               TextTrimming="CharacterEllipsis" Foreground="{DynamicResource Fg}"/>
                     <Border x:Name="Thumb" Width="{Binding ThumbWidth}" Height="{Binding ThumbHeight}" CornerRadius="6"
                             HorizontalAlignment="Left" Visibility="Collapsed" BorderBrush="{DynamicResource Line}" BorderThickness="1">
                         <Border.Background>
                             <ImageBrush ImageSource="{Binding Thumbnail}" Stretch="UniformToFill" RenderOptions.BitmapScalingMode="HighQuality"/>
                         </Border.Background>
                     </Border>
-                    <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
-                        <Image Source="{Binding SourceIcon}" Width="14" Height="14" Margin="0,0,5,0" VerticalAlignment="Center"
-                               Visibility="{Binding SourceIcon, Converter={StaticResource NullVis}}"/>
-                        <TextBlock Text="{Binding Meta}" Foreground="{DynamicResource Muted}" FontSize="11"
-                                   VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                    </StackPanel>
                 </StackPanel>
 
-                <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Top" Margin="6,0,0,0">
+                <StackPanel Grid.Row="1" Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center" Margin="6,0,0,0">
                     <Button Style="{StaticResource ActionButton}" Click="OnActionClick"/>
                     <Button Style="{StaticResource PinButton}" Click="OnPinClick"/>
                 </StackPanel>
@@ -319,9 +345,9 @@
                     <Setter TargetName="Body" Property="Visibility" Value="Collapsed"/>
                     <Setter TargetName="Thumb" Property="Visibility" Value="Visible"/>
                 </DataTrigger>
-                <DataTrigger Binding="{Binding Card}" Value="Code">
+                <DataTrigger Binding="{Binding UseMono}" Value="True">
                     <Setter TargetName="Body" Property="FontFamily" Value="{StaticResource Mono}"/>
-                    <Setter TargetName="Body" Property="FontSize" Value="12"/>
+                    <Setter TargetName="Body" Property="FontSize" Value="13"/>
                 </DataTrigger>
                 <DataTrigger Binding="{Binding Card}" Value="Link">
                     <Setter TargetName="Lead" Property="Visibility" Value="Visible"/>
@@ -396,7 +422,7 @@
                 <DataTrigger Binding="{Binding Card}" Value="Image">
                     <Setter TargetName="Thumb" Property="Visibility" Value="Visible"/>
                 </DataTrigger>
-                <DataTrigger Binding="{Binding Card}" Value="Code">
+                <DataTrigger Binding="{Binding UseMono}" Value="True">
                     <Setter TargetName="Body" Property="FontFamily" Value="{StaticResource Mono}"/>
                     <Setter TargetName="Body" Property="FontSize" Value="12"/>
                 </DataTrigger>
