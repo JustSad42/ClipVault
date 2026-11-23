@@ -12,8 +12,9 @@ namespace ClipVault;
 /// <summary>Holds the clipboard history and saves it to %APPDATA%\ClipVault.</summary>
 public sealed class ClipStore
 {
-    public static readonly string Dir = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ClipVault");
+    // CLIPVAULT_DATA points tests at a scratch folder instead of the real history.
+    public static readonly string Dir = Environment.GetEnvironmentVariable("CLIPVAULT_DATA") is { Length: > 0 } d ? d
+        : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ClipVault");
     public static readonly string ImageDir = Path.Combine(Dir, "images");
     static readonly string FilePath = Path.Combine(Dir, "history.json");
 
@@ -45,6 +46,7 @@ public sealed class ClipStore
                     continue;
                 Items.Add(item);
             }
+            RememberHashes();
         }
         catch
         {
@@ -77,6 +79,7 @@ public sealed class ClipStore
             // Same text again: move it to the top and keep the newest formatting.
             if (html != null || rtf != null) { existing.Html = html; existing.Rtf = rtf; }
             if (linkCleaned) existing.LinkCleaned = true;
+            existing.InvalidateTags();
             existing.CopiedAt = DateTime.Now;
             ScheduleSave();
             return;
@@ -96,7 +99,11 @@ public sealed class ClipStore
         Add(new ClipItem { Kind = ClipKind.Files, Text = text, Hash = hash, SourceName = source.Name, SourcePath = source.Path });
     }
 
-    public void AddImage(BitmapSource src, (string? Name, string? Path) source)
+    /// <summary>
+    /// Adds a copied image. Only the pixel copy happens on the UI thread; hashing and PNG
+    /// encoding (a few hundred ms for a 4K screenshot) run in the background.
+    /// </summary>
+    public async Task AddImageAsync(BitmapSource src, (string? Name, string? Path) source)
     {
         BitmapSource bmp = src.Format == PixelFormats.Bgra32
             ? src
@@ -106,25 +113,43 @@ public sealed class ClipStore
 
         var pixels = new byte[w * h * 4];
         bmp.CopyPixels(pixels, w * 4, 0);
-        var hash = $"i:{w}x{h}:" + Sha(pixels);
-        if (Bump(hash)) return;
 
         var item = new ClipItem
         {
-            Kind = ClipKind.Image, Hash = hash, PixelWidth = w, PixelHeight = h,
+            Kind = ClipKind.Image, PixelWidth = w, PixelHeight = h,
             SourceName = source.Name, SourcePath = source.Path,
         };
         item.ImageFile = item.Id + ".png";
-        Directory.CreateDirectory(ImageDir);
-        using (var fs = File.Create(Path.Combine(ImageDir, item.ImageFile)))
+        var file = Path.Combine(ImageDir, item.ImageFile);
+
+        string? hash = null;
+        try
         {
-            var enc = new PngBitmapEncoder();
-            enc.Frames.Add(BitmapFrame.Create(bmp));
-            enc.Save(fs);
+            hash = await Task.Run(() =>
+            {
+                var hash = $"i:{w}x{h}:" + Sha(pixels);
+                lock (_hashes) if (_hashes.Contains(hash)) return hash; // duplicate: no need to encode
+                Directory.CreateDirectory(ImageDir);
+                using var fs = File.Create(file);
+                var enc = new PngBitmapEncoder();
+                var full = BitmapSource.Create(w, h, 96, 96, PixelFormats.Bgra32, null, pixels, w * 4);
+                enc.Frames.Add(BitmapFrame.Create(full));
+                enc.Save(fs);
+                if (Math.Max(w, h) > Thumbs.Size) Thumbs.Save(full, Thumbs.PathFor(item.ImageFile));
+                return hash;
+            });
         }
+        catch { try { File.Delete(file); } catch { } return; }
+
+        if (Bump(hash)) { try { File.Delete(file); } catch { } Thumbs.Delete(item.ImageFile); return; }
+        item.Hash = hash;
         Add(item);
         RunOcr();
     }
+
+    // Image hashes, so the background task can skip encoding duplicates.
+    readonly HashSet<string> _hashes = new();
+    void RememberHashes() { lock (_hashes) { _hashes.Clear(); foreach (var i in Items) if (i.IsImage && i.Hash != null) _hashes.Add(i.Hash); } }
 
     void Add(ClipItem item)
     {
@@ -132,6 +157,7 @@ public sealed class ClipStore
         Items.Insert(0, item);
         Trim();
         ScheduleSave();
+        if (item.IsImage) RememberHashes();
     }
 
     /// <summary>If this content is already in history, move it to the top instead of adding a duplicate.</summary>
@@ -223,19 +249,22 @@ public sealed class ClipStore
         item.QrText = null;
         ThumbCache.Remove(item.Id);
         item.NotifyImageChanged();
-        if (old != null) try { File.Delete(Path.Combine(ImageDir, old)); } catch { }
+        if (old != null) { try { File.Delete(Path.Combine(ImageDir, old)); } catch { } Thumbs.Delete(old); }
         ScheduleSave();
         RunOcr();
     }
 
     public void Trim()
     {
-        foreach (var i in Items.Where(i => !i.Pinned).OrderByDescending(i => i.CopiedAt).Skip(MaxUnpinned).ToList())
+        var extra = Items.Where(i => !i.Pinned).OrderByDescending(i => i.CopiedAt).Skip(MaxUnpinned).ToList();
+        if (extra.Count == 0) return;
+        foreach (var i in extra)
         {
             Items.Remove(i);
             DeleteImage(i);
         }
         ScheduleSave();
+        RememberHashes();
     }
 
     /// <summary>Scans images that haven't been read yet for text, one at a time in the background.</summary>
@@ -266,6 +295,7 @@ public sealed class ClipStore
     {
         if (i.ImageFile == null) return;
         try { File.Delete(Path.Combine(ImageDir, i.ImageFile)); } catch { }
+        Thumbs.Delete(i.ImageFile);
     }
 
     static string TextHash(string text) => "t:" + Sha(Encoding.UTF8.GetBytes(text));

@@ -52,7 +52,7 @@ public class ClipItem : INotifyPropertyChanged
             OnChanged(nameof(LeadImage));
             OnChanged(nameof(LeadPhoto));
             OnChanged(nameof(PreviewLine));
-            OnChanged(nameof(Tags));
+            _tags = null; OnChanged(nameof(Tags));
             OnChanged(nameof(TypeLabel));
             OnChanged(nameof(UseMono));
             OnChanged(nameof(TypeBrush));
@@ -82,7 +82,7 @@ public class ClipItem : INotifyPropertyChanged
     public string? QrText
     {
         get => _qrText;
-        set { _qrText = value; _tokens = null; OnChanged(); OnChanged(nameof(HasQr)); OnChanged(nameof(QrIsLink)); OnChanged(nameof(Meta)); OnChanged(nameof(Tags)); }
+        set { _qrText = value; _tokens = null; OnChanged(); OnChanged(nameof(HasQr)); OnChanged(nameof(QrIsLink)); OnChanged(nameof(Meta)); _tags = null; OnChanged(nameof(Tags)); }
     }
 
     /// <summary>True when tracking parameters were removed from this link as it was copied.</summary>
@@ -352,7 +352,21 @@ public class ClipItem : INotifyPropertyChanged
     public string FullText => Text is { Length: > 100_000 } t ? t[..100_000] + "\n…" : Text ?? "";
 
     /// <summary>Small image for the list and grid. Only recently shown thumbnails stay in memory.</summary>
-    [JsonIgnore] public ImageSource? Thumbnail => ImageFile == null ? null : ThumbCache.Get(Id, () => LoadImage(480));
+    [JsonIgnore] public ImageSource? Thumbnail => ImageFile == null ? null : ThumbCache.Get(Id, LoadThumb);
+
+    /// <summary>
+    /// Small copy of the image saved next to it (images\thumbs). Full-size PNGs can't be decoded at a
+    /// smaller size, so a 4K screenshot costs ~33 MB and ~100 ms to decode; the thumbnail file costs ~1 ms.
+    /// </summary>
+    ImageSource? LoadThumb()
+    {
+        var thumb = Thumbs.PathFor(ImageFile!);
+        if (File.Exists(thumb))
+            try { return Thumbs.Load(thumb); } catch { }
+        var img = LoadImage(Thumbs.Size);
+        if (img is BitmapSource b && Math.Max(PixelWidth, PixelHeight) > Thumbs.Size) Thumbs.Save(b, thumb);
+        return img;
+    }
 
     /// <summary>Larger image for the preview pane and tooltip; loaded on demand, not cached.</summary>
     [JsonIgnore] public ImageSource? FullImage => LoadImage(1600);
@@ -382,10 +396,17 @@ public class ClipItem : INotifyPropertyChanged
         catch { return null; }
     }
 
-    public void RefreshMeta()
+    string? _shownGroup;
+
+    /// <summary>Called when the popup opens: updates only what can change while it was hidden.</summary>
+    public void RefreshMeta(bool themeChanged = false)
     {
-        foreach (var p in new[] { nameof(Meta), nameof(Group), nameof(AgoText), nameof(Tags), nameof(TypeBrush), nameof(TypeSoft) })
-            OnChanged(p);
+        OnChanged(nameof(AgoText));
+        OnChanged(nameof(Meta));
+        var g = Group;
+        if (g != _shownGroup) { _shownGroup = g; OnChanged(nameof(Group)); } // re-sorts this one item only
+        if (IsFiles) { _tags = null; OnChanged(nameof(Tags)); }            // file size / missing can change
+        if (themeChanged) { OnChanged(nameof(TypeBrush)); OnChanged(nameof(TypeSoft)); }
     }
 
     // ---------- row header: source, type tag, info tags ----------
@@ -412,10 +433,16 @@ public class ClipItem : INotifyPropertyChanged
     string TypeKey => Card switch { CardKind.Plain => IsCommand ? "Code" : "Text", CardKind.Phone => "Email", var k => k.ToString() };
 
     /// <summary>Small info tags after the type: "67 lines", "1920×1080", "QR", "2.3 MB", "formatted"…</summary>
+    List<string>? _tags;
+
+    /// <summary>Formatting or "cleaned" changed outside a property setter: rebuild the tags.</summary>
+    public void InvalidateTags() { _tags = null; OnChanged(nameof(Tags)); }
+
     [JsonIgnore]
-    public List<string> Tags
+    public List<string> Tags => _tags ??= BuildTags();
+
+    List<string> BuildTags()
     {
-        get
         {
             var t = new List<string>();
             switch (Kind)
@@ -550,6 +577,7 @@ public class ClipItem : INotifyPropertyChanged
     {
         foreach (var p in new[] { nameof(Thumbnail), nameof(ThumbWidth), nameof(ThumbHeight), nameof(FullImage), nameof(Meta), nameof(PreviewLine) })
             OnChanged(p);
+        InvalidateTags();
     }
 
     static string Ago(DateTime t)
@@ -565,6 +593,53 @@ public class ClipItem : INotifyPropertyChanged
     public event PropertyChangedEventHandler? PropertyChanged;
     void OnChanged([CallerMemberName] string? name = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+}
+
+/// <summary>Small thumbnail files for stored images, so the list never decodes full-size screenshots.</summary>
+static class Thumbs
+{
+    public const int Size = 480;
+    public static readonly string Dir = Path.Combine(ClipStore.ImageDir, "thumbs");
+
+    public static string PathFor(string imageFile) => Path.Combine(Dir, Path.ChangeExtension(imageFile, ".png"));
+
+    public static BitmapSource Load(string path)
+    {
+        var b = new BitmapImage();
+        b.BeginInit();
+        b.CacheOption = BitmapCacheOption.OnLoad;
+        b.CreateOptions = BitmapCreateOptions.IgnoreImageCache;
+        b.UriSource = new Uri(path);
+        b.EndInit();
+        b.Freeze();
+        return b;
+    }
+
+    /// <summary>Saves <paramref name="src"/> scaled to fit <see cref="Size"/>. Safe to call from any thread with a frozen bitmap.</summary>
+    public static void Save(BitmapSource src, string path)
+    {
+        try
+        {
+            double scale = Math.Min(1, (double)Size / Math.Max(src.PixelWidth, src.PixelHeight));
+            BitmapSource small = scale < 1 ? new TransformedBitmap(src, new ScaleTransform(scale, scale)) : src;
+            Directory.CreateDirectory(Dir);
+            var tmp = path + ".tmp";
+            using (var fs = File.Create(tmp))
+            {
+                var enc = new PngBitmapEncoder();
+                enc.Frames.Add(BitmapFrame.Create(small));
+                enc.Save(fs);
+            }
+            File.Move(tmp, path, true);
+        }
+        catch { /* thumbnails are optional; the full image is used instead */ }
+    }
+
+    public static void Delete(string? imageFile)
+    {
+        if (imageFile == null) return;
+        try { File.Delete(PathFor(imageFile)); } catch { }
+    }
 }
 
 /// <summary>Keeps the most recently shown thumbnails in memory; older ones are reloaded from disk when needed.</summary>

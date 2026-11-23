@@ -83,6 +83,8 @@ public partial class MainWindow : Window
             _trimTimer.Start();
         };
 
+        List.SelectionChanged += (_, _) => { if (_mode == PopupMode.Preview) PreviewPane.DataContext = Selected; };
+
         // New copies arriving while the popup is open: renumber after the list has updated.
         app.Store.Items.CollectionChanged += (_, _) =>
             Dispatcher.BeginInvoke(() => { UpdateBadges(); UpdateEmptyState(); });
@@ -111,23 +113,45 @@ public partial class MainWindow : Window
 
     void Open(bool center)
     {
+        var perf = Perf.Start();
         _closing = false;
-        _app.ApplyTheme();
+        bool themeChanged = _app.ApplyTheme();
+        perf?.Mark("theme");
         ResetModes();
         SearchBox.Text = "";
         FilterAll.IsChecked = true;
-        foreach (var item in _app.Store.Items) item.RefreshMeta();
-        RefreshList(null);
+        perf?.Mark("reset");
+        // Only "2m ago" texts, and headings for items that crossed midnight, need updating.
+        foreach (var item in _app.Store.Items) item.RefreshMeta(themeChanged);
+        perf?.Mark("meta");
+        RefreshList(null, force: false);
+        perf?.Mark("list");
 
         _moved = false;
         bool above = PlaceWindow(center);
         _openedAt = DateTime.Now;
         Show();
+        perf?.Mark("show");
         Native.ForceForeground(new WindowInteropHelper(this).Handle);
         Activate();
         SearchBox.Focus();
         Keyboard.Focus(SearchBox);
         AnimateIn(fromAbove: above);
+        perf?.Mark("activate");
+        if (perf != null)
+        {
+            int frames = 0;
+            EventHandler onFrame = (_, _) => frames++;
+            CompositionTarget.Rendering += onFrame;
+            Dispatcher.BeginInvoke(() => perf.Mark("layout+first render"), DispatcherPriority.Loaded);
+            Dispatcher.BeginInvoke(async () =>
+            {
+                await Task.Delay(600);
+                CompositionTarget.Rendering -= onFrame;
+                perf.Mark($"settled, {frames} frames, render tier {RenderCapability.Tier >> 16}");
+                perf.Write();
+            }, DispatcherPriority.ContextIdle);
+        }
     }
 
     /// <summary>Fade in and slide a few pixels toward the anchor.</summary>
@@ -252,6 +276,14 @@ public partial class MainWindow : Window
     {
         bool searching = _words.Length > 0;
         bool grid = _filter == FilterMode.Images;
+        // Rebuilding sorting and headings makes WPF recreate every row, so only do it when the
+        // search text or tab actually changed (not on every open).
+        var query = $"{_filter}|{SearchBox.Text}";
+        if (query == _lastQuery) { ApplyTemplates(grid); return; }
+        _lastQuery = query;
+        var shape = $"{searching}|{grid}";
+        if (shape == _lastShape) { _view.Refresh(); ApplyTemplates(grid); return; }
+        _lastShape = shape;
         using (_view.DeferRefresh())
         {
             _view.SortDescriptions.Clear();
@@ -262,7 +294,13 @@ public partial class MainWindow : Window
             _view.GroupDescriptions.Clear();
             if (!searching && !grid) _view.GroupDescriptions.Add(new PropertyGroupDescription(nameof(ClipItem.Group)));
         }
+        ApplyTemplates(grid);
+    }
 
+    string? _lastQuery, _lastShape;
+
+    void ApplyTemplates(bool grid)
+    {
         _gridMode = grid;
         var key = grid ? "grid" : _app.Settings.Compact ? "compact" : "list";
         if (key == _layoutKey) return;
@@ -272,13 +310,13 @@ public partial class MainWindow : Window
         List.ItemsPanel = (ItemsPanelTemplate)Resources[grid ? "GridPanel" : "ListPanel"];
     }
 
-    void OnSearchChanged(object sender, TextChangedEventArgs e) => RefreshList(null);
+    void OnSearchChanged(object sender, TextChangedEventArgs e) => RefreshList(null, force: false);
     void OnClearSearch(object sender, RoutedEventArgs e) { SearchBox.Text = ""; SearchBox.Focus(); }
 
     void OnFilterChecked(object sender, RoutedEventArgs e)
     {
         _filter = Enum.Parse<FilterMode>((string)((RadioButton)sender).Tag);
-        if (_view != null) RefreshList(null);
+        if (_view != null) RefreshList(null, force: false);
     }
 
     void CycleFilter(int step)
@@ -288,8 +326,10 @@ public partial class MainWindow : Window
     }
 
     /// <summary>Re-applies search, tab and sort, renumbers the 1–9 badges and keeps a sensible selection.</summary>
-    void RefreshList(ClipItem? keep)
+    /// <param name="force">Re-filter even if the search and tab are unchanged (after edits, pins, deletes).</param>
+    void RefreshList(ClipItem? keep, bool force = true)
     {
+        if (force) _lastQuery = null;
         (_words, _filters) = Search.Parse(SearchBox.Text);
         Highlighter.SetQuery(string.Join(" ", _words));
         ApplyLayout(); // also refreshes the view
@@ -350,6 +390,7 @@ public partial class MainWindow : Window
     void ResetModes()
     {
         PreviewPane.Visibility = Visibility.Collapsed;
+        PreviewPane.DataContext = null;
         EditorPane.Visibility = Visibility.Collapsed;
         ImageEditorPane.Visibility = Visibility.Collapsed;
         List.Visibility = Visibility.Visible;
@@ -367,6 +408,7 @@ public partial class MainWindow : Window
         if (Selected == null) return;
         _mode = PopupMode.Preview;
         List.Visibility = Visibility.Hidden; // the glass shows through, so hide the list underneath
+        PreviewPane.DataContext = Selected;
         PreviewPane.Visibility = Visibility.Visible;
         PreviewScroll.ScrollToTop();
     }

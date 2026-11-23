@@ -577,8 +577,8 @@
             </StackPanel>
 
             <!-- Full preview (Space) -->
-            <Grid x:Name="PreviewPane" Grid.Row="2" Margin="12,4,12,8" Visibility="Collapsed"
-                  DataContext="{Binding SelectedItem, ElementName=List}">
+            <!-- DataContext is set from code only while the preview is open, so hidden previews don't load full images -->
+            <Grid x:Name="PreviewPane" Grid.Row="2" Margin="12,4,12,8" Visibility="Collapsed">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition/>

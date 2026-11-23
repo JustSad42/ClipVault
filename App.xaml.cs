@@ -168,7 +168,8 @@ public partial class App : Application
     // ---------- theme ----------
 
     /// <summary>Applies the chosen theme. "Follow Windows" is re-checked every time the popup opens.</summary>
-    public void ApplyTheme()
+    /// <returns>True when colors changed (rows then re-read their type colors).</returns>
+    public bool ApplyTheme()
     {
         bool dark = Settings.Theme switch
         {
@@ -178,7 +179,7 @@ public partial class App : Application
         };
         var accent = (Settings.UseSystemAccent ? SystemAccent(dark) : null) ?? Hex(dark ? DefaultAccent.Dark : DefaultAccent.Light);
         var key = $"{dark}{accent}{Settings.UseSystemAccent}";
-        if (_appliedTheme == key) return;
+        if (_appliedTheme == key) return false;
         _appliedTheme = key;
         _dark = dark;
 
@@ -200,6 +201,7 @@ public partial class App : Application
         }
 
         foreach (Window w in Windows) Backdrop.Apply(w); // dark/light glass and title bars
+        return true;
     }
 
     void SetBrush(string key, Color c)
@@ -255,6 +257,7 @@ public partial class App : Application
         Store.Trim();
         _appliedTheme = null; // force re-apply
         ApplyTheme();
+        foreach (var item in Store.Items) item.RefreshMeta(themeChanged: true);
     }
 
     // ---------- reading the clipboard ----------
@@ -304,7 +307,7 @@ public partial class App : Application
             return;
         }
         var image = ReadImage();
-        if (image != null) { Store.AddImage(image, source); Sounds.Copy(); }
+        if (image != null) { _ = Store.AddImageAsync(image, source); Sounds.Copy(); }
     }
 
     static BitmapSource? ReadImage()
