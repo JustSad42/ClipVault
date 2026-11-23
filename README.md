@@ -2,6 +2,8 @@
 
 A fast, good-looking clipboard manager for Windows 11. Press **Ctrl+Shift+V** anywhere to open your clipboard history right at your text cursor, pick an item, and it's pasted into the app you were using.
 
+<p align="center"><img src="docs/screenshots/history.png" width="420" alt="ClipVault popup: pinned items, a link with its site icon, a color swatch and a screenshot"></p>
+
 ## Features
 
 - **Searchable history** of text, images and files, saved between restarts
@@ -16,6 +18,15 @@ A fast, good-looking clipboard manager for Windows 11. Press **Ctrl+Shift+V** an
 - **Undo** deletes, drag items out into other apps, save items to files
 - Frosted-glass Windows 11 look, follows your theme and accent color, compact mode, resizable popup
 - **Updates itself** from GitHub releases (verified with SHA-256)
+
+## How it works
+
+| | |
+|---|---|
+| <img src="docs/screenshots/history.png" width="380" alt="The clipboard history popup"> | <img src="docs/screenshots/ocr-search.png" width="380" alt="Searching for a word that only appears inside a screenshot"> |
+| **1. Press Ctrl+Shift+V.** Your history opens at the text cursor, newest first, with pins on top. Press 1–9 or Enter to paste. | **2. Type to search.** Matches include text read from screenshots: "keyboard" finds the order receipt image. |
+
+The ⋯ button (bottom right) has compact mode, settings and the data folder. The clips in these screenshots are made up.
 
 ## Install
 
