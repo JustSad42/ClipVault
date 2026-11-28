@@ -1,11 +1,3 @@
-bin/
-obj/
-publish/
-publish-next/
-out/
-.vs/
-*.user
-graphify-out/
-
 # Rust build
 /target/
+graphify-out/

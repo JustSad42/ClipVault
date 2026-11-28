@@ -138,6 +138,10 @@ fn key_name(vk: u32) -> String {
 pub fn dir() -> PathBuf {
     static DIR: LazyLock<PathBuf> = LazyLock::new(|| {
         std::env::var_os("CLIPVAULT_DATA").filter(|d| !d.is_empty()).map(PathBuf::from).unwrap_or_else(|| {
+            // tests never touch the real folder
+            if cfg!(test) {
+                return std::env::temp_dir().join("clipvault-tests");
+            }
             std::env::var_os("APPDATA").map(PathBuf::from).unwrap_or_else(|| PathBuf::from(".")).join("ClipVault")
         })
     });
@@ -146,7 +150,7 @@ pub fn dir() -> PathBuf {
 
 /// A test copy gets its own single-instance names, so it never talks to (or replaces) the real one.
 pub fn is_test() -> bool {
-    std::env::var_os("CLIPVAULT_DATA").is_some_and(|d| !d.is_empty())
+    cfg!(test) || std::env::var_os("CLIPVAULT_DATA").is_some_and(|d| !d.is_empty())
 }
 
 const RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
@@ -177,6 +181,13 @@ pub fn set_startup(on: bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tests_stay_out_of_the_real_folder() {
+        assert!(is_test());
+        let real = std::env::var_os("APPDATA").map(PathBuf::from).unwrap_or_default();
+        assert!(!dir().starts_with(real.join("ClipVault")));
+    }
 
     #[test]
     fn reads_the_old_settings_file() {

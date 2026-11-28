@@ -30,9 +30,8 @@ The ⋯ button (bottom right) has compact mode, settings and the data folder. Th
 
 ## Install
 
-1. Install the [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0) (x64) if you don't have it.
-2. Download `ClipVault.exe` from the [latest release](https://github.com/JustSad42/ClipVault/releases/latest) and put it in a folder you can write to, e.g. `%LOCALAPPDATA%\Programs\ClipVault`.
-3. Run it. Open Settings from the ⋯ button to change the shortcut or start ClipVault with Windows.
+1. Download `ClipVault.exe` from the [latest release](https://github.com/JustSad42/ClipVault/releases/latest) and put it in a folder you can write to, e.g. `%LOCALAPPDATA%\Programs\ClipVault`.
+2. Run it (nothing else to install). Open Settings from the ⋯ button to change the shortcut or start ClipVault with Windows.
 
 Your history is stored locally in `%APPDATA%\ClipVault` and never leaves your PC. (The only network requests are update checks to GitHub and, if enabled, website icons fetched directly from the sites you copied links from.)
 
@@ -53,11 +52,16 @@ Your history is stored locally in `%APPDATA%\ClipVault` and never leaves your PC
 
 ## Building and releasing
 
-Requires the .NET 10 SDK.
+ClipVault is a native Rust program drawn with Direct2D: one small exe, no runtime to install. Building needs [Rust](https://rustup.rs) with the MSVC toolchain.
 
 ```powershell
-dotnet run                       # try it locally
-.\release.ps1 1.1.0 "What changed"
+cargo run --release              # try it locally (quit the installed copy first)
+cargo test
+.\release.ps1 2.1.0 "What changed"
 ```
+
+To try a build without touching your real history, set `CLIPVAULT_DATA` to an empty folder first; such a copy also runs next to the installed one (give it a different shortcut). `cargo test snapshots -- --ignored` with `CV_SNAP` set to a folder draws every screen into PNG files.
+
+Versions before 2.0 were written in C#. 2.0 reads the same history and settings, and keeps a copy of the old history as `history.before-2.0.json`.
 
 `release.ps1` bumps the version, commits, tags and pushes. The GitHub Actions workflow then builds `ClipVault.exe`, publishes it as a release, and every installed copy picks it up within a few hours.

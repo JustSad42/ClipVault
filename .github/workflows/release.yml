@@ -15,16 +15,15 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: actions/setup-dotnet@v5
-        with:
-          dotnet-version: "10.0.x"
-
       - name: Build
         shell: pwsh
         run: |
           $version = "${{ github.ref_name }}".TrimStart("v")
-          dotnet publish ClipVault.csproj -c Release -r win-x64 --self-contained false `
-            -p:PublishSingleFile=true -p:Version=$version -o out
+          if (-not (Select-String -Path Cargo.toml -SimpleMatch "version = `"$version`"" -Quiet)) { throw "Cargo.toml's version differs from the tag" }
+          cargo build --release --locked
+          if ($LASTEXITCODE -ne 0) { throw "Build failed" }
+          New-Item -ItemType Directory out | Out-Null
+          Copy-Item target/release/clipvault.exe out/ClipVault.exe
           $hash = (Get-FileHash out/ClipVault.exe -Algorithm SHA256).Hash.ToLower()
           Set-Content out/ClipVault.exe.sha256 "$hash  ClipVault.exe" -NoNewline
 
