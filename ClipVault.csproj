@@ -11,7 +11,7 @@
     <AssemblyName>ClipVault</AssemblyName>
     <RootNamespace>ClipVault</RootNamespace>
     <!-- Release version. Bumped by release.ps1; GitHub builds pass the tag version in. -->
-    <Version>1.1.3</Version>
+    <Version>1.1.4</Version>
     <Product>ClipVault</Product>
     <!-- Exe icon for Explorer, the taskbar and task managers. Redraw with: python assets/make_icon.py -->
     <ApplicationIcon>assets\ClipVault.ico</ApplicationIcon>
