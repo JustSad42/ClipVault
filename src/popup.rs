@@ -1015,13 +1015,13 @@ impl Popup {
         let grid = self.tab == Tab::Images;
         let step: isize = if grid { 3 } else { 1 };
         let selected = self.selected as isize;
-        // quick paste: 1–9 while the search box is empty, Alt+1–9 any time
+        // quick paste: Ctrl+1–9; plain digits go to the search. Not with Alt: AltGr is Ctrl+Alt and types characters
         let digit = match vk.0 {
             0x31..=0x39 => vk.0 - 0x30,
             0x61..=0x69 => vk.0 - 0x60,
             _ => 0,
         };
-        if digit > 0 && (alt || (empty && !ctrl && !shift)) {
+        if digit > 0 && ctrl && !alt && !shift {
             if let Some(id) = self.items.get(usize::from(digit) - 1).cloned() {
                 self.paste(app, &id, PasteMode::Normal, None);
             }

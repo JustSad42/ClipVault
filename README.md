@@ -11,7 +11,7 @@ A fast, good-looking clipboard manager for Windows 11. Press **Ctrl+Shift+V** an
 - **Search inside images**: text in screenshots is read with Windows' built-in OCR (offline)
 - **QR codes** in copied images are detected; open the link or copy the text
 - **Smart cards** for links (site icon), colors (swatch, copy as HEX/RGB/HSL), emails, phone numbers, code and files (thumbnail, size, date)
-- **Quick paste** with 1–9, **pins**, filter tabs and a thumbnail grid for images
+- **Quick paste** with Ctrl+1–9, **pins**, filter tabs and a thumbnail grid for images
 - **Paste options**: formatted or plain, UPPERCASE / lowercase / Title Case / trimmed / single line, and apps that always get plain text
 - **Edit before pasting**: text editor, plus crop, rotate and blur for images
 - **Removes link tracking** (`utm_source`, `fbclid`, …) as you copy
@@ -24,7 +24,7 @@ A fast, good-looking clipboard manager for Windows 11. Press **Ctrl+Shift+V** an
 | | |
 |---|---|
 | <img src="docs/screenshots/history.png" width="380" alt="The clipboard history popup"> | <img src="docs/screenshots/ocr-search.png" width="380" alt="Searching for a word that only appears inside a screenshot"> |
-| **1. Press Ctrl+Shift+V.** Your history opens at the text cursor, newest first, with pins on top. Press 1–9 or Enter to paste. | **2. Type to search.** Matches include text read from screenshots: "keyboard" finds the order receipt image. |
+| **1. Press Ctrl+Shift+V.** Your history opens at the text cursor, newest first, with pins on top. Press Ctrl+1–9 or Enter to paste. | **2. Type to search.** Matches include text read from screenshots: "keyboard" finds the order receipt image. |
 
 The ⋯ button (bottom right) has compact mode, settings and the data folder. The clips in these screenshots are made up.
 
@@ -41,7 +41,7 @@ Your history is stored locally in `%APPDATA%\ClipVault` and never leaves your PC
 |---|---|
 | Ctrl+Shift+V | Open / close |
 | Enter / Shift+Enter / Ctrl+Enter | Paste / paste as plain text / copy only |
-| 1–9 (or Alt+1–9) | Quick paste |
+| Ctrl+1–9 | Quick paste |
 | Space | Full preview |
 | Tab / Shift+Tab | Switch filter tab |
 | F2 | Edit (text or image) |
