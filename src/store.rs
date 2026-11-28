@@ -73,10 +73,6 @@ impl Store {
         s
     }
 
-    pub fn dir(&self) -> &std::path::Path {
-        &self.dir
-    }
-
     pub fn images(&self) -> PathBuf {
         self.dir.join("images")
     }

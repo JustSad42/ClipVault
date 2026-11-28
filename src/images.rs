@@ -107,13 +107,6 @@ impl Bitmap {
         }
     }
 
-    pub fn from_hbitmap(bitmap: windows::Win32::Graphics::Gdi::HBITMAP) -> Result<Bitmap> {
-        unsafe {
-            let made = factory()?.CreateBitmapFromHBITMAP(bitmap, Default::default(), WICBitmapUsePremultipliedAlpha)?;
-            Self::from_source(&made.cast()?, None)
-        }
-    }
-
     fn wic(&self) -> Result<IWICBitmapSource> {
         unsafe { factory()?.CreateBitmapFromMemory(self.w, self.h, &GUID_WICPixelFormat32bppBGRA, self.w * 4, &self.px)?.cast() }
     }

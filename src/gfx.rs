@@ -173,8 +173,6 @@ pub enum Wrap {
     Line,
     /// Wrapped to the width, from the top.
     Words,
-    /// From the top, no wrapping, each line trimmed with an ellipsis.
-    Lines,
 }
 
 /// A laid-out block of text, with the questions an editor asks about it. Positions are UTF-16.
@@ -194,11 +192,9 @@ impl Layout {
                 Wrap::Words => {
                     let _ = l.SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP);
                 }
-                Wrap::Line | Wrap::Lines => {
+                Wrap::Line => {
                     let _ = l.SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
-                    if wrap == Wrap::Line {
-                        let _ = l.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-                    }
+                    let _ = l.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
                     let trim = DWRITE_TRIMMING { granularity: DWRITE_TRIMMING_GRANULARITY_CHARACTER, delimiter: 0, delimiterCount: 0 };
                     if let Ok(ellipsis) = fact().dw.CreateEllipsisTrimmingSign(&format) {
                         let _ = l.SetTrimming(&trim, &ellipsis);
@@ -271,6 +267,7 @@ pub struct Surface {
     pub dc: HDC,
     bitmap: HBITMAP,
     old: HGDIOBJ,
+    #[cfg_attr(not(test), allow(dead_code))]
     bits: *const u8,
     pub w: i32,
     pub h: i32,
@@ -319,6 +316,7 @@ impl Surface {
     }
 
     /// The pixels as drawn (valid after `end`).
+    #[cfg(test)]
     pub fn pixels(&self) -> &[u8] {
         unsafe { std::slice::from_raw_parts(self.bits, (self.w * self.h * 4) as usize) }
     }

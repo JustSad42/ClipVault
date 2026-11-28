@@ -13,7 +13,7 @@ pub const MOD_CONTROL_: u32 = 2;
 pub const MOD_SHIFT_: u32 = 4;
 pub const MOD_WIN_: u32 = 8;
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Theme {
     #[default]
     System,
@@ -21,7 +21,7 @@ pub enum Theme {
     Light,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum OpenAt {
     #[default]
     TextCursor,
