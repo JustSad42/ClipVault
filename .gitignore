@@ -6,3 +6,6 @@ out/
 .vs/
 *.user
 graphify-out/
+
+# Rust build
+/target/
