@@ -173,15 +173,6 @@ static class Native
     public static void SetDwm(IntPtr hwnd, int attribute, int value) =>
         DwmSetWindowAttribute(hwnd, attribute, ref value, sizeof(int));
 
-    [DllImport("kernel32.dll")]
-    static extern IntPtr GetCurrentProcess();
-
-    [DllImport("psapi.dll", EntryPoint = "EmptyWorkingSet")]
-    static extern bool EmptyWorkingSet(IntPtr process);
-
-    /// <summary>Hands unused memory pages back to Windows (they're reloaded if needed again).</summary>
-    public static void TrimWorkingSet() => EmptyWorkingSet(GetCurrentProcess());
-
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]
     static extern IntPtr GetWindowLongPtr(IntPtr hWnd, int index);
 

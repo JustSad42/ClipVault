@@ -27,7 +27,6 @@ public partial class MainWindow : Window
     readonly List<ClipItem> _badged = new();
     IntPtr _target;          // window that was active before the popup opened; pastes go there
     bool _keepOpen;          // true while a dialog or drag of ours is running, so losing focus doesn't hide the popup
-    bool _closing;           // close animation running
     bool _gridMode;          // Images tab shows a thumbnail grid
     string _layoutKey = "";  // which row look is applied: list, compact or grid
     bool _moved;             // popup was dragged since it opened
@@ -66,15 +65,15 @@ public partial class MainWindow : Window
         ApplyLayout();
         List.ItemsSource = _view;
 
-        // A few seconds after the popup closes, give memory back to Windows.
-        // A downloaded update installs at that moment too, while nothing is on screen.
+        // A few seconds after the popup closes: install a downloaded update while nothing is on screen,
+        // and delete the files of removed items. Memory is deliberately left alone: dropping the
+        // thumbnails and emptying the working set made the next open load everything back.
         _trimTimer.Tick += (_, _) =>
         {
             _trimTimer.Stop();
             if (IsVisible) return;
             if (Updater.Ready != null && Updater.ApplyAndRestart()) return;
             _app.Store.PurgeDeleted(TimeSpan.FromSeconds(10));
-            App.TrimMemory();
         };
         IsVisibleChanged += (_, _) =>
         {
@@ -98,7 +97,7 @@ public partial class MainWindow : Window
     /// <summary>Hotkey handler: open near the text cursor, or close if already open.</summary>
     public void Toggle(IntPtr foreground)
     {
-        if (IsVisible && !_closing) { Dismiss(); return; }
+        if (IsVisible) { Dismiss(); return; }
         _target = foreground;
         Open(center: false);
     }
@@ -106,7 +105,7 @@ public partial class MainWindow : Window
     /// <summary>Open in the middle of the screen (used on manual launch). Selecting copies but doesn't paste.</summary>
     public void ShowCentered()
     {
-        if (IsVisible && !_closing) { Activate(); return; }
+        if (IsVisible) { Activate(); return; }
         _target = IntPtr.Zero;
         Open(center: true);
     }
@@ -114,7 +113,6 @@ public partial class MainWindow : Window
     void Open(bool center)
     {
         var perf = Perf.Start();
-        _closing = false;
         bool themeChanged = _app.ApplyTheme();
         perf?.Mark("theme");
         ResetModes();
@@ -154,28 +152,19 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>Fade in and slide a few pixels toward the anchor.</summary>
+    /// <summary>A very short fade and slide toward the anchor: visible, but nothing to wait for.</summary>
     void AnimateIn(bool fromAbove)
     {
         var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
-        Body.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(140)) { EasingFunction = ease });
+        Body.BeginAnimation(OpacityProperty, new DoubleAnimation(0.4, 1, TimeSpan.FromMilliseconds(60)) { EasingFunction = ease });
         BodyShift.BeginAnimation(TranslateTransform.YProperty,
-            new DoubleAnimation(fromAbove ? 10 : -10, 0, TimeSpan.FromMilliseconds(220)) { EasingFunction = ease });
+            new DoubleAnimation(fromAbove ? 4 : -4, 0, TimeSpan.FromMilliseconds(90)) { EasingFunction = ease });
     }
 
-    /// <summary>Quick fade out, then hide.</summary>
-    void HideAnimated()
+    /// <summary>Closing is instant: a fade only delays getting back to what you were doing.</summary>
+    void CloseNow()
     {
-        if (!IsVisible || _closing) return;
-        _closing = true;
-        var fade = new DoubleAnimation(0, TimeSpan.FromMilliseconds(90));
-        fade.Completed += (_, _) =>
-        {
-            if (!_closing) return; // reopened meanwhile
-            _closing = false;
-            Hide();
-        };
-        Body.BeginAnimation(OpacityProperty, fade);
+        if (IsVisible) Hide();
     }
 
     /// <returns>True when the popup opens above the anchor (so it slides up).</returns>
@@ -236,16 +225,21 @@ public partial class MainWindow : Window
     void Dismiss()
     {
         var target = _target;
-        HideAnimated();
+        CloseNow();
         if (target != IntPtr.Zero) Native.SetForegroundWindow(target);
     }
 
-    void OnDeactivated(object? sender, EventArgs e)
+    async void OnDeactivated(object? sender, EventArgs e)
     {
-        // Ignore focus loss in the first moment after opening: Windows sometimes bounces focus
-        // back to the previous app while the popup appears.
-        if (_keepOpen || (DateTime.Now - _openedAt).TotalMilliseconds < 400) return;
-        HideAnimated();
+        if (_keepOpen) return;
+        // Windows sometimes bounces focus back to the previous app while the popup appears: in that
+        // first moment, look again shortly before closing (a real click elsewhere still closes it).
+        if ((DateTime.Now - _openedAt).TotalMilliseconds < 150)
+        {
+            await Task.Delay(150);
+            if (_keepOpen || IsActive) return;
+        }
+        CloseNow();
     }
 
     // ---------- filtering / layout ----------
@@ -472,13 +466,14 @@ public partial class MainWindow : Window
 
         var target = _target;
         var area = Area;
-        _closing = false;
-        Hide(); // no fade here: pasting should feel instant
+        CloseNow();
         if (mode == PasteMode.CopyOnly) Toast.Show("Copied to clipboard", area);
         if (target == IntPtr.Zero) return;
         Native.SetForegroundWindow(target);
         if (mode == PasteMode.CopyOnly) return;
-        await Task.Delay(80); // give the target window a moment to take focus
+        // Paste as soon as the target really has the focus (usually at once), not after a fixed wait.
+        for (int waited = 0; waited < 200 && Native.GetForegroundWindow() != target; waited += 5) await Task.Delay(5);
+        await Task.Delay(10); // let it route the focus to its text box
         Native.SendCtrlV();
     }
 
@@ -656,7 +651,6 @@ public partial class MainWindow : Window
 
         if (result != DragDropEffects.None)
         {
-            _closing = false;
             Hide();
         }
     }
@@ -687,14 +681,12 @@ public partial class MainWindow : Window
             case CardKind.Link:
                 try { Process.Start(new ProcessStartInfo((item.Text ?? "").Trim()) { UseShellExecute = true }); }
                 catch { Toast.Show("Couldn't open the link", Area); return; }
-                _closing = false;
                 Hide();
                 break;
             case CardKind.Files:
                 var path = item.FilePaths.FirstOrDefault(p => File.Exists(p) || Directory.Exists(p));
                 if (path == null) { Toast.Show("That file no longer exists", Area); return; }
                 Process.Start("explorer.exe", $"/select,\"{path}\"");
-                _closing = false;
                 Hide();
                 break;
             case CardKind.Image:
@@ -954,7 +946,6 @@ public partial class MainWindow : Window
     {
         if (MenuItemOf(sender) is not { QrIsLink: true } i) return;
         try { Process.Start(new ProcessStartInfo(i.QrText!) { UseShellExecute = true }); } catch { return; }
-        _closing = false;
         Hide();
     }
 

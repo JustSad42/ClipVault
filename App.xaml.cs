@@ -121,13 +121,6 @@ public partial class App : Application
 
         if (!e.Args.Contains("--background"))
             _popup.ShowCentered();
-        else
-        {
-            // Started with Windows: trim once loading and text recognition have settled.
-            var startupTrim = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(20) };
-            startupTrim.Tick += (_, _) => { startupTrim.Stop(); if (!_popup.IsVisible) TrimMemory(); };
-            startupTrim.Start();
-        }
     }
 
     protected override void OnExit(ExitEventArgs e)
@@ -142,21 +135,6 @@ public partial class App : Application
             _mutex.ReleaseMutex();
         }
         base.OnExit(e);
-    }
-
-    // ---------- memory ----------
-
-    /// <summary>
-    /// Called a few seconds after the popup closes: drops cached thumbnails, compacts memory
-    /// and returns unused pages to Windows, so ClipVault stays light while it waits in the background.
-    /// </summary>
-    public static void TrimMemory()
-    {
-        ThumbCache.Clear();
-        System.Runtime.GCSettings.LargeObjectHeapCompactionMode = System.Runtime.GCLargeObjectHeapCompactionMode.CompactOnce;
-        GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true, compacting: true);
-        GC.WaitForPendingFinalizers();
-        Native.TrimWorkingSet();
     }
 
     // ---------- hotkey ----------
