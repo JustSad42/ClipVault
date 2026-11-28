@@ -32,20 +32,44 @@ struct Recent {
 impl Recent {
     const MAX: usize = 48;
 
+    /// Drops the least recently used until the pictures fit in `budget` bytes (the newest stays).
+    fn trim(&mut self, budget: usize) {
+        let size = |v: &(Option<Rc<Image>>, u64)| v.0.as_ref().map_or(0, |i| i.px.len());
+        let mut total: usize = self.map.values().map(size).sum();
+        while self.map.len() > 1 && (total > budget || self.map.len() > Self::MAX) {
+            let Some(oldest) = self.map.iter().min_by_key(|(_, v)| v.1).map(|(k, _)| k.clone()) else { break };
+            total -= self.map.remove(&oldest).map_or(0, |v| size(&v));
+        }
+    }
+
     fn get(&mut self, key: &str, load: impl FnOnce() -> Option<Rc<Image>>) -> Option<Rc<Image>> {
         self.clock += 1;
         if let Some(e) = self.map.get_mut(key) {
             e.1 = self.clock;
             return e.0.clone();
         }
-        if self.map.len() >= Self::MAX {
-            if let Some(oldest) = self.map.iter().min_by_key(|(_, v)| v.1).map(|(k, _)| k.clone()) {
-                self.map.remove(&oldest);
-            }
-        }
         let image = load();
         self.map.insert(key.to_string(), (image.clone(), self.clock));
+        self.trim(32 << 20);
         image
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pictures_stay_within_the_budget() {
+        let mut r = Recent::default();
+        let picture = || Some(Rc::new(Image { w: 1, h: 1, px: vec![0; 10 << 20] }));
+        for key in ["a", "b", "c", "d"] {
+            r.get(key, picture);
+        }
+        assert_eq!(r.map.len(), 3, "32 MB holds three of 10 MB");
+        assert!(!r.map.contains_key("a"), "the oldest goes first");
+        r.trim(0);
+        assert_eq!(r.map.keys().collect::<Vec<_>>(), ["d"]);
     }
 }
 
@@ -152,6 +176,11 @@ impl Cache {
     pub fn favicon_arrived(&mut self, host: &str, icon: Option<Bitmap>) {
         self.pending.remove(host);
         self.favicons.insert(host.to_string(), icon.map(drawable));
+    }
+
+    /// While nothing is on screen, only the latest few pictures stay (enough to reopen at once).
+    pub fn rest(&mut self) {
+        self.pictures.trim(6 << 20);
     }
 
     /// Forgets items that are gone.

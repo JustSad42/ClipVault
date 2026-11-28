@@ -156,27 +156,7 @@ pub fn show() {
     style_window(hwnd, dark.into());
     let (work, scale) = system::monitor_at(mouse);
     let (w, h) = ((W * scale) as i32, (H * scale) as i32);
-    let ui = Ui {
-        hwnd,
-        surface: None,
-        scale,
-        startup: settings::startup_enabled(),
-        draft: s,
-        history,
-        apps,
-        page: 0,
-        scroll: 0.0,
-        content_height: 0.0,
-        hotkey_hint: HINT_IDLE,
-        focus: None,
-        ring: false,
-        hits: vec![],
-        order: vec![],
-        hover: None,
-        pressed: None,
-        caret_on: true,
-        swallow_char: false,
-    };
+    let ui = Ui::new(hwnd, s, scale, history, apps);
     UI.with_borrow_mut(|u| *u = Some(ui));
     OPEN.set(hwnd.0 as isize);
     unsafe {
@@ -197,6 +177,30 @@ fn close() {
 }
 
 impl Ui {
+    fn new(hwnd: HWND, draft: Settings, scale: f32, history: TextBox, apps: TextBox) -> Ui {
+        Ui {
+            hwnd,
+            surface: None,
+            scale,
+            startup: settings::startup_enabled(),
+            draft,
+            history,
+            apps,
+            page: 0,
+            scroll: 0.0,
+            content_height: 0.0,
+            hotkey_hint: HINT_IDLE,
+            focus: None,
+            ring: false,
+            hits: vec![],
+            order: vec![],
+            hover: None,
+            pressed: None,
+            caret_on: true,
+            swallow_char: false,
+        }
+    }
+
     fn set_focus(&mut self, to: Option<Control>) {
         if self.focus == to {
             return;
@@ -781,4 +785,18 @@ unsafe extern "system" fn wndproc(h: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> 
         Some(v) => LRESULT(v),
         None => unsafe { DefWindowProcW(h, msg, wp, lp) },
     }
+}
+
+/// One page of the window, drawn without opening it.
+#[cfg(test)]
+pub fn snapshot(draft: Settings, page: usize, scale: f32) -> Surface {
+    let mut history = TextBox::new(false);
+    history.set(&draft.max_history.to_string());
+    let mut ui = Ui::new(HWND::default(), draft, scale, history, TextBox::new(false));
+    ui.page = page;
+    ui.ring = true;
+    ui.focus = Some(Control::Save);
+    let surface = Surface::new((W * scale) as i32, (H * scale) as i32).expect("surface");
+    ui.paint(&surface);
+    surface
 }

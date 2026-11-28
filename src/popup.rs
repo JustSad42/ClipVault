@@ -34,8 +34,10 @@ pub fn handle() -> HWND {
     HWND(WINDOW.load(Ordering::SeqCst) as _)
 }
 
+/// The window's own flag: `IsWindowVisible` also asks about the desktop, which is never visible
+/// where the automated test runs.
 pub fn visible() -> bool {
-    unsafe { IsWindowVisible(handle()).as_bool() }
+    unsafe { GetWindowLongW(handle(), GWL_STYLE) as u32 & WS_VISIBLE.0 != 0 }
 }
 
 pub fn repaint() {
@@ -352,6 +354,7 @@ impl Popup {
         self.image = None;
         self.preview.set("");
         self.preview_of = None;
+        app.cache.rest();
         app::popup_hidden();
     }
 
@@ -365,6 +368,13 @@ impl Popup {
                 }
             }
         });
+    }
+
+    /// After a menu: if another window has the focus now, we're done.
+    fn close_if_left(&mut self, app: &mut App) {
+        if unsafe { GetForegroundWindow() } != self.hwnd {
+            self.close(app);
+        }
     }
 
     fn save_placement(&mut self, app: &mut App) {
@@ -580,7 +590,7 @@ impl Popup {
         }
     }
 
-    fn open_editor(&mut self, app: &mut App, id: &str) {
+    pub fn open_editor(&mut self, app: &mut App, id: &str) {
         let Some(item) = app.store.get(id).cloned() else { return };
         match item.kind {
             Kind::Text => {
@@ -843,8 +853,9 @@ impl Popup {
             let chosen = menu::item(owner, &item, &facts, dark);
             with_popup(|p, a| {
                 p.keep_open = false;
-                if let Some(command) = chosen {
-                    p.command(a, &id, command);
+                match chosen {
+                    Some(command) => p.command(a, &id, command),
+                    None => p.close_if_left(a),
                 }
                 repaint();
             });
@@ -905,7 +916,7 @@ impl Popup {
             let chosen = menu::more(owner, ready, compact, target, dark);
             with_popup(|p, a| {
                 p.keep_open = false;
-                let Some(chosen) = chosen else { return };
+                let Some(chosen) = chosen else { return p.close_if_left(a) };
                 use menu::More as M;
                 match chosen {
                     M::Update => run_later(|| {
@@ -1503,10 +1514,12 @@ unsafe extern "system" fn wndproc(h: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> 
         }),
         WM_DPICHANGED => {
             let dpi = unsafe { GetDpiForWindow(h) };
-            with_popup(|p, _| p.scale = dpi as f32 / 96.0);
-            let r = unsafe { &*(lp.0 as *const RECT) };
-            unsafe {
-                let _ = SetWindowPos(h, None, r.left, r.top, r.right - r.left, r.bottom - r.top, SWP_NOZORDER | SWP_NOACTIVATE);
+            // busy means we are placing the window ourselves, and our size is already right
+            if with_popup(|p, _| p.scale = dpi as f32 / 96.0).is_some() {
+                let r = unsafe { &*(lp.0 as *const RECT) };
+                unsafe {
+                    let _ = SetWindowPos(h, None, r.left, r.top, r.right - r.left, r.bottom - r.top, SWP_NOZORDER | SWP_NOACTIVATE);
+                }
             }
             Some(0)
         }

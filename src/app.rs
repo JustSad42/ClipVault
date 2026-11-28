@@ -49,6 +49,8 @@ const WM_TASKS: u32 = WM_APP + 1;
 const TIMER_SAVE: usize = 1;
 const TIMER_HIDDEN: usize = 2;
 const TIMER_UPDATE: usize = 3;
+const TIMER_RETRY_EVENTS: usize = 4;
+const TIMER_RETRY_CAPTURE: usize = 5;
 
 pub fn post(event: Event) {
     QUEUE.lock().unwrap().push_back(event);
@@ -286,11 +288,23 @@ unsafe extern "system" fn wndproc(h: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> 
             with_popup(|p, a| p.toggle(a, front));
         }
         windows::Win32::UI::WindowsAndMessaging::WM_CLIPBOARDUPDATE => {
-            with(App::capture);
+            if with(App::capture).is_none() {
+                unsafe {
+                    SetTimer(Some(h), TIMER_RETRY_CAPTURE, 30, None);
+                }
+            }
         }
         WM_EVENT => {
-            // events stay queued while the state is busy; the next message picks them up
-            while let Some(event) = QUEUE.lock().unwrap().pop_front() {
+            loop {
+                // while the state is busy (a call that pumps messages), events wait their turn
+                if with(|_| ()).is_none() {
+                    unsafe {
+                        SetTimer(Some(h), TIMER_RETRY_EVENTS, 30, None);
+                    }
+                    break;
+                }
+                let next = QUEUE.lock().unwrap().pop_front();
+                let Some(event) = next else { break };
                 match event {
                     Event::Show => {
                         with_popup(|p, a| p.show_centred(a));
@@ -325,6 +339,13 @@ unsafe extern "system" fn wndproc(h: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> 
                     if net::apply_and_restart() {
                         quit();
                     }
+                }
+            }
+            TIMER_RETRY_EVENTS | TIMER_RETRY_CAPTURE => {
+                unsafe {
+                    let _ = KillTimer(Some(h), wp.0);
+                    let message = if wp.0 == TIMER_RETRY_EVENTS { WM_EVENT } else { windows::Win32::UI::WindowsAndMessaging::WM_CLIPBOARDUPDATE };
+                    let _ = PostMessageW(Some(h), message, WPARAM(0), LPARAM(0));
                 }
             }
             TIMER_UPDATE => {
@@ -463,5 +484,124 @@ fn keep_old_history() {
     let (from, to) = (dir.join("history.json"), dir.join("history.before-2.0.json"));
     if from.exists() && !to.exists() {
         let _ = std::fs::copy(from, to);
+    }
+}
+
+/// Draws every screen, from made-up items, into PNG files in %CV_SNAP% to be looked at:
+/// `cargo test snapshots -- --ignored`
+#[cfg(test)]
+mod snapshots {
+    use super::*;
+    use crate::gfx::Surface;
+    use crate::images::Bitmap;
+    use crate::popup::{Hit, Mode, Popup, Tab};
+
+    fn save(s: &Surface, path: std::path::PathBuf, dark: bool) {
+        // the glass fill is see-through: put it over a plain backdrop
+        let under: u32 = if dark { 0x30 } else { 0xD0 };
+        let px = s.pixels().chunks_exact(4).flat_map(|p| {
+            let over = |c: u8| (u32::from(c) + under * (255 - u32::from(p[3])) / 255).min(255) as u8;
+            [over(p[0]), over(p[1]), over(p[2]), 255]
+        });
+        Bitmap { w: s.w as u32, h: s.h as u32, px: px.collect() }.save(&path).unwrap();
+    }
+
+    fn sample(store: &mut Store) {
+        let src = |name: &str| Source { name: Some(name.into()), path: Some(r"C:\Windows\explorer.exe".into()) };
+        store.add_text("hello@example.com".into(), None, None, src("Outlook"), false);
+        store.add_text("#3D5AFE".into(), None, None, src("Figma"), false);
+        store.add_files(&[r"C:\Windows\win.ini".into(), r"C:\Windows\explorer.exe".into()], src("File Explorer"));
+        let (w, h) = (640u32, 360u32);
+        let px = (0..h).flat_map(|y| (0..w).flat_map(move |x| [(x / 3) as u8, (y / 2) as u8, 180, 255])).collect();
+        let picture = Bitmap { w, h, px };
+        std::fs::create_dir_all(store.images()).unwrap();
+        let saved = store::write_image(&store.images(), &store::new_id(), &picture).unwrap();
+        store.add_image(saved, src("Snipping Tool"));
+        store.add_text("https://github.com/JustSad42/ClipVault/releases".into(), None, None, src("Chrome"), true);
+        store.add_text("fn main() {\n    let total: u32 = (1..=10).sum();\n    println!(\"{total}\");\n}".into(), None, None, src("Code"), false);
+        store.add_text("Meeting moved to Thursday at 3 pm.\nBring the printed schedule and the notes from last week, we'll go through them together.".into(), Some("<b>x</b>".into()), None, src("Discord"), false);
+        store.add_text("git push origin main".into(), None, None, src("Windows Terminal"), false);
+        let id = store.items.iter().find(|i| i.text.as_deref() == Some("#3D5AFE")).unwrap().id.clone();
+        store.set_pinned(&id, true);
+    }
+
+    #[test]
+    #[ignore]
+    fn snapshots() {
+        let out = std::path::PathBuf::from(std::env::var("CV_SNAP").expect("CV_SNAP"));
+        let data = out.join("data");
+        let _ = std::fs::remove_dir_all(&data);
+        std::fs::create_dir_all(&data).unwrap();
+        // this test is run on its own
+        unsafe {
+            std::env::set_var("CLIPVAULT_DATA", &data);
+            let _ = OleInitialize(None);
+        }
+        for (theme, tag) in [(settings::Theme::Dark, "dark"), (settings::Theme::Light, "light")] {
+            let mut s = Settings::load();
+            s.theme = theme;
+            s.link_icons = false;
+            let mut store = Store::load(data.join(tag), s.max_history);
+            sample(&mut store);
+            let theme = Theme::current(&s);
+            let mut a = App { reader: reader_thread(), reading: false, own_sequence: 0, seen_version: store.version, cache: Cache::default(), settings: s, store, theme };
+            let mut p = Popup::new(&mut a);
+            let shot = |p: &mut Popup, a: &mut App, name: &str| {
+                p.sync_preview(a);
+                p.paint(a);
+                // a second pass: hover positions come from the first
+                p.paint(a);
+                save(p.surface.as_ref().unwrap(), out.join(format!("{tag}-{name}.png")), theme.dark);
+            };
+            for scale in [1.0, 1.5] {
+                p.scale = scale;
+                p.rebuild(&mut a, None);
+                p.hover = Some(Hit::Row(1));
+                shot(&mut p, &mut a, &format!("list-{scale}"));
+            }
+            p.scale = 1.0;
+            p.hover = None;
+            p.search.set("the");
+            p.query = crate::search::parse("the");
+            p.rebuild(&mut a, None);
+            shot(&mut p, &mut a, "search");
+            p.search.set("zzzz");
+            p.query = crate::search::parse("zzzz");
+            p.rebuild(&mut a, None);
+            shot(&mut p, &mut a, "nomatch");
+            p.search.set("");
+            p.query = Default::default();
+            p.tab = Tab::Images;
+            p.rebuild(&mut a, None);
+            shot(&mut p, &mut a, "grid");
+            p.mode = Mode::Preview;
+            shot(&mut p, &mut a, "preview-image");
+            p.mode = Mode::List;
+            p.tab = Tab::All;
+            a.settings.compact = true;
+            p.rebuild(&mut a, None);
+            shot(&mut p, &mut a, "compact");
+            a.settings.compact = false;
+            p.rebuild(&mut a, None);
+            p.selected = 1;
+            p.mode = Mode::Preview;
+            shot(&mut p, &mut a, "preview-text");
+            p.mode = Mode::Edit;
+            p.editor.set("An edited note\nwith a second line");
+            shot(&mut p, &mut a, "edit");
+            let id = a.store.items.iter().find(|i| i.kind == crate::model::Kind::Image).unwrap().id.clone();
+            p.reset_mode();
+            p.open_editor(&mut a, &id);
+            if let Some(e) = &mut p.image {
+                e.drag = Some(((120.0, 190.0), (260.0, 250.0)));
+            }
+            shot(&mut p, &mut a, "image-editor");
+            for page in 0..4 {
+                save(&crate::settings_ui::snapshot(a.settings.clone(), page, 1.0), out.join(format!("{tag}-settings-{page}.png")), theme.dark);
+            }
+            unsafe {
+                let _ = DestroyWindow(p.hwnd);
+            }
+        }
     }
 }

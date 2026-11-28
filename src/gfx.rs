@@ -402,7 +402,8 @@ impl Surface {
         let props = D2D1_BITMAP_PROPERTIES { pixelFormat: D2D1_PIXEL_FORMAT { format: DXGI_FORMAT_B8G8R8A8_UNORM, alphaMode: D2D1_ALPHA_MODE_PREMULTIPLIED }, dpiX: 96.0, dpiY: 96.0 };
         let made = unsafe { self.rt.CreateBitmap(D2D_SIZE_U { width: img.w, height: img.h }, Some(img.px.as_ptr() as _), img.w * 4, &props).ok()? };
         let mut cache = self.images.borrow_mut();
-        if cache.len() >= 128 {
+        let held: usize = cache.values().map(|(i, _)| i.px.len()).sum();
+        if cache.len() >= 128 || held > 48 << 20 {
             cache.clear();
         }
         cache.insert(key, (img.clone(), made.clone()));
